@@ -18,6 +18,7 @@ package com.google.cloud.teleport.splunk;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 import static org.mockserver.integration.ClientAndServer.startClientAndServer;
 
 import com.google.api.client.http.GenericUrl;
@@ -26,6 +27,8 @@ import com.google.api.client.util.ExponentialBackOff;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
@@ -38,7 +41,9 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.net.ssl.SSLHandshakeException;
 import org.junit.Before;
 import org.junit.Test;
@@ -155,7 +160,18 @@ public class HttpEventPublisherTest {
       HttpContent actualContent = publisher.getContent(SPLUNK_EVENTS);
       actualContent.writeTo(bos);
       String actualString = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-      assertThat(actualString, is(equalTo(expectedString)));
+      String parseRegex = "(?<=\\})(?=\\{)";
+      String[] jsonExpected = expectedString.split(parseRegex);
+      List<JsonElement> expectedElements =
+          Arrays.stream(jsonExpected)
+              .map(json -> new JsonParser().parse(json))
+              .collect(Collectors.toList());
+      String[] jsonActual = actualString.split(parseRegex);
+      List<JsonElement> actualElements =
+          Arrays.stream(jsonActual)
+              .map(json -> new JsonParser().parse(json))
+              .collect(Collectors.toList());
+      assertTrue(expectedElements.equals(actualElements));
     }
   }
 
