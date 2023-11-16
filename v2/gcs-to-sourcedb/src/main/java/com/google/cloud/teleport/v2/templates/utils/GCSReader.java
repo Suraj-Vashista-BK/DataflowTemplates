@@ -15,8 +15,6 @@
  */
 package com.google.cloud.teleport.v2.templates.utils;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.cloud.Timestamp;
 import com.google.cloud.teleport.v2.templates.common.ProcessingContext;
 import com.google.cloud.teleport.v2.templates.common.TrimmedShardedDataChangeRecord;
@@ -69,7 +67,8 @@ public class GCSReader {
 
     this.fileName = gcsFileName;
     this.shardFileCreationTracker =
-        new ShardFileCreationTracker(spannerDao, taskContext.getShard().getLogicalShardId());
+        new ShardFileCreationTracker(
+            spannerDao, taskContext.getShard().getLogicalShardId(), taskContext.getRunId());
     this.shardId = taskContext.getShard().getLogicalShardId();
     shouldRetryWhenFileNotFound = true;
     shouldFailWhenFileNotFound = false;
@@ -78,7 +77,7 @@ public class GCSReader {
   public List<TrimmedShardedDataChangeRecord> getRecords() {
     /*
     Call TextIO - read the file into PCollection
-    Get a JSON transfrom of the PCollection
+    Get a JSON transform of the PCollection
     Sort the Collection on commitTs,serverTrxId and record sequence
      */
     List<TrimmedShardedDataChangeRecord> changeStreamList = new ArrayList<>();
@@ -88,7 +87,6 @@ public class GCSReader {
 
       BufferedReader reader =
           new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
-      ObjectWriter ow = new ObjectMapper().writer();
       while (reader.ready()) {
         String line = reader.readLine();
         TrimmedShardedDataChangeRecord chrec =
@@ -109,7 +107,7 @@ public class GCSReader {
       Metrics.counter(shardId, "file_read_" + shardId).inc();
 
     } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
-      throw new RuntimeException("Failed in processing the record : " + ex);
+      throw new RuntimeException("Failed in processing the record ", ex);
     } catch (IOException e) {
 
       LOG.warn("File not found : " + fileName);
@@ -124,7 +122,7 @@ public class GCSReader {
       }
 
     } catch (Exception e) {
-      throw new RuntimeException("Failed in GcsReader : " + e);
+      throw new RuntimeException("Failed in GcsReader ", e);
     }
 
     return changeStreamList;
@@ -141,8 +139,9 @@ public class GCSReader {
       No one's fault here.*/
       while (firstPipelineProgress == null) {
         LOG.info(
-            "No data in shard_file_create_progress for shard {}, will retry in 5 seconds", shardId);
-        Thread.sleep(5000);
+            "No data in shard_file_create_progress for shard {}, will retry in 10 seconds",
+            shardId);
+        Thread.sleep(10000);
         firstPipelineProgress = shardFileCreationTracker.getShardFileCreationProgressTimestamp();
         Metrics.counter(GCSReader.class, "metadata_file_create_init_retry_" + shardId).inc();
       }
@@ -150,11 +149,11 @@ public class GCSReader {
       // the Spanner to GCS job needs to catchup - wait and retry
       while (firstPipelineProgress.compareTo(currentEndTimestamp) < 0) {
         LOG.info(
-            "Progress for shard {} in shard_file_create_progress is lagging {}, will retry in 5"
+            "Progress for shard {} in shard_file_create_progress is lagging {}, will retry in 10"
                 + " seconds",
             shardId,
             firstPipelineProgress);
-        Thread.sleep(5000);
+        Thread.sleep(10000);
         firstPipelineProgress = shardFileCreationTracker.getShardFileCreationProgressTimestamp();
         Metrics.counter(GCSReader.class, "metadata_file_create_lag_retry_" + shardId).inc();
       }

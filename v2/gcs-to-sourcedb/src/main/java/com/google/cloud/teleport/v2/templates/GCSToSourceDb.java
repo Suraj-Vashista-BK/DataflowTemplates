@@ -97,7 +97,7 @@ public class GCSToSourceDb {
         optional = true,
         description = "Destination source type",
         enumOptions = {@TemplateEnumOption("mysql")},
-        helpText = "This is the type of source databse.Currently only" + " mysql is supported.")
+        helpText = "This is the type of source database. Currently only mysql is supported.")
     @Default.String("mysql")
     String getSourceType();
 
@@ -216,6 +216,16 @@ public class GCSToSourceDb {
     String getMetadataTableSuffix();
 
     void setMetadataTableSuffix(String value);
+
+    @TemplateParameter.Text(
+        order = 14,
+        optional = false,
+        description = "Reverse replication run identifier",
+        helpText =
+            "The identifier to distinguish between different runs of reverse replication flows.")
+    String getRunIdentifier();
+
+    void setRunIdentifier(String value);
   }
 
   /**
@@ -268,7 +278,8 @@ public class GCSToSourceDb {
             options.getMetadataInstance(),
             options.getMetadataDatabase(),
             options.getRunMode(),
-            tableSuffix);
+            tableSuffix,
+            options.getRunIdentifier());
 
     LOG.info("The size of  processing context is : " + processingContextMap.size());
     // TODO: add deletegcs mode handling

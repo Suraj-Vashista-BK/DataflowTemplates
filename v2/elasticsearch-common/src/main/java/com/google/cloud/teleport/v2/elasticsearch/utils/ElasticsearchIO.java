@@ -83,6 +83,7 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
 import org.apache.http.nio.entity.NStringEntity;
+import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.ssl.SSLContexts;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.elasticsearch.client.Request;
@@ -267,6 +268,8 @@ public class ElasticsearchIO {
 
     public abstract boolean isTrustSelfSignedCerts();
 
+    public abstract boolean isDisableCertificateValidation();
+
     abstract Builder builder();
 
     @AutoValue.Builder
@@ -295,6 +298,8 @@ public class ElasticsearchIO {
 
       abstract Builder setTrustSelfSignedCerts(boolean trustSelfSignedCerts);
 
+      abstract Builder setDisableCertificateValidation(boolean disableCertificateValidation);
+
       abstract ConnectionConfiguration build();
     }
 
@@ -316,6 +321,7 @@ public class ElasticsearchIO {
           .setIndex(index)
           .setType(type)
           .setTrustSelfSignedCerts(false)
+          .setDisableCertificateValidation(false)
           .build();
     }
 
@@ -409,6 +415,19 @@ public class ElasticsearchIO {
     }
 
     /**
+     * If Elasticsearch uses SSL/TLS then configure whether to ignore any certificate validation or
+     * not. The default is false.
+     *
+     * @param disableCertificateValidation Whether to trust self signed certs
+     * @return a {@link ConnectionConfiguration} describes a connection configuration to
+     *     Elasticsearch.
+     */
+    public ConnectionConfiguration withDisableCertificateValidation(
+        boolean disableCertificateValidation) {
+      return builder().setDisableCertificateValidation(disableCertificateValidation).build();
+    }
+
+    /**
      * If set, overwrites the default max retry timeout (30000ms) in the Elastic {@link RestClient}
      * and the default socket timeout (30000ms) in the {@link RequestConfig} of the Elastic {@link
      * RestClient}.
@@ -479,10 +498,19 @@ public class ElasticsearchIO {
             String keystorePassword = getKeystorePassword();
             keyStore.load(is, (keystorePassword == null) ? null : keystorePassword.toCharArray());
           }
-          final TrustStrategy trustStrategy =
-              isTrustSelfSignedCerts() ? new TrustSelfSignedStrategy() : null;
-          final SSLContext sslContext =
-              SSLContexts.custom().loadTrustMaterial(keyStore, trustStrategy).build();
+
+          final SSLContext sslContext;
+          if (isDisableCertificateValidation()) {
+            sslContext =
+                SSLContextBuilder.create()
+                    .loadTrustMaterial((TrustStrategy) (chain, authType) -> true)
+                    .build();
+          } else {
+            final TrustStrategy trustStrategy =
+                isTrustSelfSignedCerts() ? new TrustSelfSignedStrategy() : null;
+            sslContext = SSLContexts.custom().loadTrustMaterial(keyStore, trustStrategy).build();
+          }
+
           final SSLIOSessionStrategy sessionStrategy = new SSLIOSessionStrategy(sslContext);
           restClientBuilder.setHttpClientConfigCallback(
               httpClientBuilder ->
@@ -682,7 +710,7 @@ public class ElasticsearchIO {
         // shard.So we do not use desiredBundleSize because we cannot split shards.
         // With the slice API in ES 5.x+ we will be able to use desiredBundleSize.
         // Basically we will just ask the slice API to return data
-        // in nbBundles = estimatedSize / desiredBundleSize chuncks.
+        // in nbBundles = estimatedSize / desiredBundleSize chunks.
         // So each beam source will read around desiredBundleSize volume of data.
 
         JsonNode statsJson = BoundedElasticsearchSource.getStats(connectionConfiguration, true);
@@ -1212,7 +1240,7 @@ public class ElasticsearchIO {
     /**
      * Provide a function to extract the target type from the document allowing for dynamic document
      * routing. Should the function throw an Exception then the batch will fail and the exception
-     * propagated. Users are encouraged to consider carefully if multipe types are a sensible model
+     * propagated. Users are encouraged to consider carefully if multiple types are a sensible model
      * <a
      * href="https://www.elastic.co/blog/index-type-parent-child-join-now-future-in-elasticsearch">as
      * discussed in this blog</a>.

@@ -47,12 +47,12 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.runners.Parameterized;
 
 /** Integration test for {@link SpannerVectorEmbeddingExportIT Spanner to GCS JSON} template. */
 @Category(TemplateIntegrationTest.class)
 @TemplateIntegrationTest(SpannerVectorEmbeddingExport.class)
-@RunWith(JUnit4.class)
+@RunWith(Parameterized.class)
 public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
 
   private static final int MESSAGES_COUNT = 100;
@@ -60,15 +60,19 @@ public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
   private SpannerResourceManager googleSqlResourceManager;
   private SpannerResourceManager postgresResourceManager;
 
+  private String shortTestName;
+
+  @Parameterized.Parameter public Boolean dataBoostEnabled;
+
+  @Parameterized.Parameters(name = "data-boost-{0}")
+  public static List<Boolean> testParameters() {
+    return List.of(true, false);
+  }
+
   @Before
   public void setup() throws IOException {
-    // Set up resource managers
-    googleSqlResourceManager =
-        SpannerResourceManager.builder(testName, PROJECT, REGION).maybeUseStaticInstance().build();
-    postgresResourceManager =
-        SpannerResourceManager.builder(testName, PROJECT, REGION, Dialect.POSTGRESQL)
-            .maybeUseStaticInstance()
-            .build();
+    // Make test names shorter to have distinctive database IDs
+    shortTestName = testName.toLowerCase().replace("test", "").replace("to", "") + dataBoostEnabled;
   }
 
   @After
@@ -77,8 +81,14 @@ public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
   }
 
   @Test
-  public void testSpannerToGCSJSON() throws IOException {
-    String tableName = testName + "_Documents";
+  public void testGsqlToGcs() throws IOException {
+    googleSqlResourceManager =
+        SpannerResourceManager.builder(
+                (dataBoostEnabled ? "db_" : "") + shortTestName, PROJECT, REGION)
+            .maybeUseStaticInstance()
+            .build();
+
+    String tableName = "gsql" + dataBoostEnabled + RandomStringUtils.randomNumeric(5);
     String createDocumentsTableStatement =
         String.format(
             "CREATE TABLE `%s` (\n"
@@ -99,6 +109,7 @@ public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
             .addParameter("spannerDatabaseId", googleSqlResourceManager.getDatabaseId())
             .addParameter("spannerTable", tableName)
             .addParameter("spannerColumnsToExport", "id,embedding: embedding, restricts")
+            .addParameter("spannerDataBoostEnabled", Boolean.toString(dataBoostEnabled))
             .addParameter("gcsOutputFilePrefix", "vectors-")
             .addParameter("gcsOutputFolder", getGcsPath("output/"));
 
@@ -121,9 +132,19 @@ public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
   }
 
   @Test
-  public void testPostgresSpannerToGCSJSON() throws IOException {
+  public void testPgToGcs() throws IOException {
+    postgresResourceManager =
+        SpannerResourceManager.builder(
+                (dataBoostEnabled ? "db_" : "") + shortTestName,
+                PROJECT,
+                REGION,
+                Dialect.POSTGRESQL)
+            .maybeUseStaticInstance()
+            .build();
+
     // converting to lowercase for PG
-    String tableName = StringUtils.lowerCase(testName + "_Documents");
+    String tableName =
+        StringUtils.lowerCase("pg" + dataBoostEnabled + RandomStringUtils.randomNumeric(5));
     String createDocumentsTableStatement =
         String.format(
             "CREATE TABLE %s (\n"
@@ -144,6 +165,7 @@ public class SpannerVectorEmbeddingExportIT extends TemplateTestBase {
             .addParameter("spannerDatabaseId", postgresResourceManager.getDatabaseId())
             .addParameter("spannerTable", tableName)
             .addParameter("spannerColumnsToExport", "id,embedding: embedding, restricts")
+            .addParameter("spannerDataBoostEnabled", Boolean.toString(dataBoostEnabled))
             .addParameter("gcsOutputFilePrefix", "vectors-")
             .addParameter("gcsOutputFolder", getGcsPath("output/"));
 

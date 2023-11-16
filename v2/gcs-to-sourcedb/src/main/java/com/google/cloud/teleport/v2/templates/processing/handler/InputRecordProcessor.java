@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
 import org.apache.beam.sdk.metrics.Metrics;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,15 +63,15 @@ public class InputRecordProcessor {
         JSONObject newValuesJson = new JSONObject(newValueJsonStr);
         JSONObject keysJson = new JSONObject(keysJsonStr);
 
-        String dmlStatment =
+        String dmlStatement =
             DMLGenerator.getDMLStatement(
                 modType, tableName, schema, newValuesJson, keysJson, sourceDbTimezoneOffset);
-        if (!dmlStatment.isEmpty()) {
-          dmlBatch.add(dmlStatment);
+        if (!dmlStatement.isEmpty()) {
+          dmlBatch.add(dmlStatement);
         }
         if (!capturedlagMetric) {
           /*
-          The commit timstamp of the first record is chosen for lag calculation
+          The commit timestamp of the first record is chosen for lag calculation
           Since the last record may have commit timestamp which might repeat for the
           next iteration of messages */
           capturedlagMetric = true;
@@ -90,14 +91,18 @@ public class InputRecordProcessor {
               + recordList.size()
               + " took : "
               + ChronoUnit.MILLIS.between(daoStartTime, daoEndTime)
-              + " miliseconds ");
+              + " milliseconds ");
 
       numRecProcessedMetric.inc(recordList.size()); // update the number of records processed metric
 
       lagMetric.update(replicationLag); // update the lag metric
 
     } catch (Exception e) {
-      throw new RuntimeException("Failed to process records: " + e.getMessage());
+      LOG.error(
+          "The exception while processing shardId: {} is {} ",
+          shardId,
+          ExceptionUtils.getStackTrace(e));
+      throw new RuntimeException("Failed to process records: ", e);
     }
   }
 }
