@@ -18,6 +18,7 @@ package com.google.cloud.teleport.splunk;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 import static org.mockserver.integration.ClientAndServer.startClientAndServer;
 
 import com.google.api.client.http.GenericUrl;
@@ -26,6 +27,8 @@ import com.google.api.client.util.ExponentialBackOff;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
@@ -38,7 +41,10 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.net.ssl.SSLHandshakeException;
 import org.junit.Before;
 import org.junit.Test;
@@ -116,14 +122,24 @@ public class HttpEventPublisherTest {
 
     String actual = publisher.getStringPayload(SPLUNK_EVENTS);
 
-    String expected =
-        "{\"time\":12345,\"host\":\"test-host-1\",\"source\":\"test-source-1\","
-            + "\"sourcetype\":\"test-source-type-1\",\"index\":\"test-index-1\","
-            + "\"event\":\"test-event-1\"}{\"time\":12345,\"host\":\"test-host-2\","
-            + "\"source\":\"test-source-2\",\"sourcetype\":\"test-source-type-2\","
-            + "\"index\":\"test-index-2\",\"event\":\"test-event-2\"}";
+    List<JsonElement> expectedElements = new ArrayList<>();
+    expectedElements.add(
+        JsonParser.parseString(
+            "{\"time\":12345,\"host\":\"test-host-1\",\"source\":\"test-source-1\","
+                + "\"sourcetype\":\"test-source-type-1\",\"index\":\"test-index-1\","
+                + "\"event\":\"test-event-1\"}"));
+    expectedElements.add(
+        JsonParser.parseString(
+            "{\"time\":12345,\"host\":\"test-host-2\","
+                + "\"source\":\"test-source-2\",\"sourcetype\":\"test-source-type-2\","
+                + "\"index\":\"test-index-2\",\"event\":\"test-event-2\"}"));
 
-    assertThat(expected, is(equalTo(actual)));
+    String[] jsonActual = actual.split("(?<=\\})(?=\\{)");
+    List<JsonElement> actualElements =
+        Arrays.stream(jsonActual)
+            .map(json -> JsonParser.parseString(json))
+            .collect(Collectors.toList());
+    assertTrue(expectedElements.equals(actualElements));
   }
 
   /** Test whether {@link HttpContent} is created from the list of {@link SplunkEvent}s. */
@@ -144,18 +160,28 @@ public class HttpEventPublisherTest {
             .withEnableGzipHttpCompression(true)
             .build();
 
-    String expectedString =
-        "{\"time\":12345,\"host\":\"test-host-1\",\"source\":\"test-source-1\","
-            + "\"sourcetype\":\"test-source-type-1\",\"index\":\"test-index-1\","
-            + "\"event\":\"test-event-1\"}{\"time\":12345,\"host\":\"test-host-2\","
-            + "\"source\":\"test-source-2\",\"sourcetype\":\"test-source-type-2\","
-            + "\"index\":\"test-index-2\",\"event\":\"test-event-2\"}";
+    List<JsonElement> expectedElements = new ArrayList<>();
+    expectedElements.add(
+        JsonParser.parseString(
+            "{\"time\":12345,\"host\":\"test-host-1\",\"source\":\"test-source-1\","
+                + "\"sourcetype\":\"test-source-type-1\",\"index\":\"test-index-1\","
+                + "\"event\":\"test-event-1\"}"));
+    expectedElements.add(
+        JsonParser.parseString(
+            "{\"time\":12345,\"host\":\"test-host-2\","
+                + "\"source\":\"test-source-2\",\"sourcetype\":\"test-source-type-2\","
+                + "\"index\":\"test-index-2\",\"event\":\"test-event-2\"}"));
 
     try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
       HttpContent actualContent = publisher.getContent(SPLUNK_EVENTS);
       actualContent.writeTo(bos);
       String actualString = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-      assertThat(actualString, is(equalTo(expectedString)));
+      String[] jsonActual = actualString.split("(?<=\\})(?=\\{)");
+      List<JsonElement> actualElements =
+          Arrays.stream(jsonActual)
+              .map(json -> JsonParser.parseString(json))
+              .collect(Collectors.toList());
+      assertTrue(expectedElements.equals(actualElements));
     }
   }
 
